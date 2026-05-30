@@ -3,7 +3,7 @@ import threading
 import tkinter as tk
 
 HOST = "0.0.0.0"
-PORT = 9999
+PORTS = [9995, 9996, 9997, 9998, 9999]
 
 class UDPListener:
     def __init__(self, root):
@@ -28,8 +28,8 @@ class UDPListener:
         self.toggle_udp_button.pack(pady=10)
 
         self.running = False
-        self.sock = None
-        self.thread = None
+        self.socks = []
+        self.threads = []
 
     def toggle_udp(self):
         if not self.running:
@@ -37,36 +37,49 @@ class UDPListener:
             self.running = True
             self.toggle_udp_button.config(text="Stop Listening")
 
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.sock.bind((HOST, PORT))
-            
-            # IMPORTANT: prevents blocking forever
-            self.sock.settimeout(1.0)
+            for port in PORTS:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind((HOST, port))
 
-            # IMPORTANT: prevents blocking forever
-            self.thread = threading.Thread(target=self.listen_udp, daemon=True)
-            self.thread.start()
+                # IMPORTANT: prevents blocking forever
+                sock.settimeout(1.0)
+
+                # IMPORTANT: prevents blocking forever
+                thread = threading.Thread(
+                    target=self.listen_udp,
+                    args=(sock, port),
+                    daemon=True
+                )
+                self.socks.append(sock)
+                self.threads.append(thread)
+                thread.start()
         
         else:
             # STOP
             self.running = False
             self.toggle_udp_button.config(text="Start Listening")
 
-            if self.sock:
-                self.sock.close()
-                self.sock = None
+            for sock in self.socks:
+                try:
+                    sock.close()
+                except:
+                    pass
 
-    def listen_udp(self):
+            self.socks.clear()
+            self.threads.clear()
+
+    def listen_udp(self, sock, port):
         while self.running:
             try:
-                data, addr = self.sock.recvfrom(1024)
-                message = data.decode("utf-8")
+                data, addr = sock.recvfrom(1024)
+                message = data.decode("utf-8", errors="replace")
 
                 # Safely update Tkinter UI from thread
                 self.root.after(
                     0,
                     self.update_label,
-                    f"{addr[0]}:{addr[1]} → {message}"
+                    f"[PORT {port}] {addr[0]}:{addr[1]} → {message}"
                 )
 
             except socket.timeout:
