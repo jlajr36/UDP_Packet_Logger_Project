@@ -2,7 +2,7 @@ import socket
 import time
 import random
 
-HOST = "127.0.0.1"
+HOST = "192.168.1.222"
 PORTS = [9995, 9996, 9997, 9998, 9999]
 
 print("Starting UDP client loop with dynamic IoT metrics. Press Ctrl+C to stop.")
