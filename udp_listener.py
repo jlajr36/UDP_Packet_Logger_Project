@@ -1,6 +1,8 @@
 import socket
 import threading
 import tkinter as tk
+from tkinter import ttk
+import time
 
 HOST = "0.0.0.0"
 PORTS = [9995, 9996, 9997, 9998, 9999]
@@ -8,17 +10,30 @@ PORTS = [9995, 9996, 9997, 9998, 9999]
 class UDPListener:
     def __init__(self, root):
         self.root = root
-        self.root.title("UDP Listener")
+        self.root.title("UDP Telemetry Dashboard")
 
-        self.message_label = tk.Label(
+        self.clients = {}
+
+        self.tree = ttk.Treeview(
             root,
-            text="Waiting for data...",
-            font=("Arial", 14),
-            width=50,
-            height=5,
-            wraplength=500
+            columns=("ip", "device", "seq", "value", "age"),
+            show="headings",
+            height=15
         )
-        self.message_label.pack(padx=20, pady=20)
+
+        self.tree.heading("ip", text="IP")
+        self.tree.heading("device", text="DEVICE")
+        self.tree.heading("seq", text="SEQ")
+        self.tree.heading("value", text="VALUE")
+        self.tree.heading("age", text="AGE")
+
+        self.tree.column("ip", width=140)
+        self.tree.column("device", width=100)
+        self.tree.column("seq", width=80)
+        self.tree.column("value", width=200)
+        self.tree.column("age", width=100)
+
+        self.tree.pack(padx=10, pady=10)
 
         self.toggle_udp_button = tk.Button(
             root,
@@ -42,7 +57,7 @@ class UDPListener:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 sock.bind((HOST, port))
 
-                # IMPORTANT: prevents blocking forever
+                # IMPORTANT: prevents blocking forever                
                 sock.settimeout(1.0)
 
                 # IMPORTANT: prevents blocking forever
@@ -54,7 +69,7 @@ class UDPListener:
                 self.socks.append(sock)
                 self.threads.append(thread)
                 thread.start()
-        
+
         else:
             # STOP
             self.running = False
@@ -72,18 +87,43 @@ class UDPListener:
             self.socks.clear()
             self.threads.clear()
 
+    def parse_message(self, message):
+        data = {}
+        for part in message.split("|"):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                data[k] = v
+        return data
+
     def listen_udp(self, sock, port):
         while self.running:
             try:
                 data, addr = sock.recvfrom(1024)
                 message = data.decode("utf-8", errors="replace")
 
-                # Safely update Tkinter UI from thread
-                self.root.after(
-                    0,
-                    self.update_label,
-                    f"[PORT {port}] {addr[0]}:{addr[1]} → {message}"
+                ip = addr[0]
+                parsed = self.parse_message(message)
+
+                device = parsed.get("ID", "UNKNOWN")
+                seq = parsed.get("SEQ", "-")
+
+                value = next(
+                    (f"{k}={v}" for k, v in parsed.items()
+                     if k not in ["ID", "SEQ", "TS", "JUL"]),
+                    "-"
                 )
+
+                key = (ip, device)
+
+                self.clients[key] = {
+                    "ip": ip,
+                    "device": device,
+                    "seq": seq,
+                    "value": value,
+                    "last_seen": time.time()
+                }
+
+                self.root.after(0, self.refresh_table)
 
             except socket.timeout:
                 # normal loop check
@@ -92,9 +132,26 @@ class UDPListener:
             except OSError:
                 # socket closed
                 break
-        
-    def update_label(self, message):
-        self.message_label.config(text=message)
+
+    def refresh_table(self):
+        self.tree.delete(*self.tree.get_children())
+
+        now = time.time()
+
+        for (ip, device), c in self.clients.items():
+            age = round(now - c["last_seen"], 2)
+
+            self.tree.insert(
+                "",
+                "end",
+                values=(
+                    ip,
+                    device,
+                    c["seq"],
+                    c["value"],
+                    f"{age}s"
+                )
+            )
 
 root = tk.Tk()
 app = UDPListener(root)
