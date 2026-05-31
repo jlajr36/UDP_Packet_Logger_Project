@@ -16,21 +16,19 @@ class UDPListener:
 
         self.tree = ttk.Treeview(
             root,
-            columns=("ip", "device", "seq", "value", "age"),
+            columns=("ip", "device", "value", "age"),
             show="headings",
             height=15
         )
 
         self.tree.heading("ip", text="IP")
         self.tree.heading("device", text="DEVICE")
-        self.tree.heading("seq", text="SEQ")
         self.tree.heading("value", text="VALUE")
         self.tree.heading("age", text="AGE")
 
         self.tree.column("ip", width=140)
         self.tree.column("device", width=100)
-        self.tree.column("seq", width=80)
-        self.tree.column("value", width=200)
+        self.tree.column("value", width=250)
         self.tree.column("age", width=100)
 
         self.tree.pack(padx=10, pady=10)
@@ -105,11 +103,10 @@ class UDPListener:
                 parsed = self.parse_message(message)
 
                 device = parsed.get("ID", "UNKNOWN")
-                seq = parsed.get("SEQ", "-")
 
                 value = next(
                     (f"{k}={v}" for k, v in parsed.items()
-                     if k not in ["ID", "SEQ", "TS", "JUL"]),
+                     if k not in ["ID", "TS", "JUL"]),
                     "-"
                 )
 
@@ -118,7 +115,6 @@ class UDPListener:
                 self.clients[key] = {
                     "ip": ip,
                     "device": device,
-                    "seq": seq,
                     "value": value,
                     "last_seen": time.time()
                 }
@@ -147,7 +143,6 @@ class UDPListener:
                 values=(
                     ip,
                     device,
-                    c["seq"],
                     c["value"],
                     f"{age}s"
                 )

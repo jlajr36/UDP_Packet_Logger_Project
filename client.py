@@ -5,8 +5,6 @@ import random
 HOST = "127.0.0.1"
 PORTS = [9995, 9996, 9997, 9998, 9999]
 
-i = 0
-
 print("Starting UDP client loop with dynamic IoT metrics. Press Ctrl+C to stop.")
 
 try:
@@ -21,18 +19,17 @@ try:
             cpu = round(10.0 + random.uniform(0.0, 45.0), 1)
             motion = random.choice([0, 0, 0, 0, 1]) # 20% chance of motion
             messages = [
-                f"ID=ENV_01|SEQ={i}|TS={epoch_ts}|JUL={julian_day}|TEMP={temp}C|HUMIDITY=45%|STATUS=OK",
-                f"ID=PWR_02|SEQ={i}|TS={epoch_ts}|JUL={julian_day}|VOLTAGE={voltage}V|LOAD=4.2A|STATUS=NORMAL",
-                f"ID=SEC_03|SEQ={i}|TS={epoch_ts}|JUL={julian_day}|MOTION={motion}|DOOR=CLOSED|STATUS=ARMED",
-                f"ID=FLOW_04|SEQ={i}|TS={epoch_ts}|JUL={julian_day}|RATE=12.5LPM|PRESSURE=45PSI|STATUS=OK",
-                f"ID=SYS_05|SEQ={i}|TS={epoch_ts}|JUL={julian_day}|CPU_UTIL={cpu}%|RAM_FREE=2048MB|STATUS=OK"
+                f"ID=ENV_01|TS={epoch_ts}|JUL={julian_day}|TEMP={temp}C|HUMIDITY=45%|STATUS=OK",
+                f"ID=PWR_02|TS={epoch_ts}|JUL={julian_day}|VOLTAGE={voltage}V|LOAD=4.2A|STATUS=NORMAL",
+                f"ID=SEC_03|TS={epoch_ts}|JUL={julian_day}|MOTION={motion}|DOOR=CLOSED|STATUS=ARMED",
+                f"ID=FLOW_04|TS={epoch_ts}|JUL={julian_day}|RATE=12.5LPM|PRESSURE=45PSI|STATUS=OK",
+                f"ID=SYS_05|TS={epoch_ts}|JUL={julian_day}|CPU_UTIL={cpu}%|RAM_FREE=2048MB|STATUS=OK"
             ]
             for port, message in zip(PORTS, messages):
                 data = message.encode("utf-8")  
                 sock.sendto(data, (HOST, port))
                 print(f"Sent to {port}: {message}")
 
-            i += 1
             time.sleep(0.5)
 
 except KeyboardInterrupt:
