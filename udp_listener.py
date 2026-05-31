@@ -33,7 +33,7 @@ class UDPListener:
 
     def toggle_udp(self):
         if not self.running:
-            #START
+            # START
             self.running = True
             self.toggle_udp_button.config(text="Stop Listening")
 
@@ -65,6 +65,9 @@ class UDPListener:
                     sock.close()
                 except:
                     pass
+
+            for thread in self.threads:
+                thread.join(timeout=1.1) 
 
             self.socks.clear()
             self.threads.clear()
