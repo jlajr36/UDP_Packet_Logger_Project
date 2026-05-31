@@ -27,14 +27,13 @@ try:
                 f"ID=FLOW_04|SEQ={i}|TS={epoch_ts}|JUL={julian_day}|RATE=12.5LPM|PRESSURE=45PSI|STATUS=OK",
                 f"ID=SYS_05|SEQ={i}|TS={epoch_ts}|JUL={julian_day}|CPU_UTIL={cpu}%|RAM_FREE=2048MB|STATUS=OK"
             ]
-            for port in PORTS:
-                message = messages[PORTS.index(port)]
+            for port, message in zip(PORTS, messages):
                 data = message.encode("utf-8")  
                 sock.sendto(data, (HOST, port))
                 print(f"Sent to {port}: {message}")
 
             i += 1
-            time.sleep(0.01)
+            time.sleep(0.5)
 
 except KeyboardInterrupt:
     print("\nStopping client. Goodbye!")
