@@ -9,12 +9,14 @@ packets = rdpcap(env.f_pcapng)
 
 iface = env.iface
 
+allowed_ips = {ip for pair in env.selected_ips for ip in pair}
+
 # ===== BUILD GLOBAL TIMELINE =====
 all_pkts = []
 
 for p in packets:
     if IP in p and UDP in p:
-        if p[IP].src in env.selected_ips:
+        if p[IP].src in allowed_ips:
             all_pkts.append(p)
 
 # sort by original capture time
