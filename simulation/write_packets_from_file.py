@@ -7,7 +7,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 packets = rdpcap(env.f_pcapng)
 
-iface = conf.iface
+iface = env.iface
 
 # ===== BUILD GLOBAL TIMELINE =====
 all_pkts = []
@@ -38,7 +38,7 @@ for i, p in enumerate(all_pkts):
 
     payload = bytes(p[UDP].payload)
 
-    pkt = Ether() / IP(src=p[IP].src, dst=p[IP].dst) / UDP(
+    pkt = Ether() / IP(src=p[IP].src, dst=env.dest_ip) / UDP(
         sport=p[UDP].sport,
         dport=p[UDP].dport
     ) / Raw(payload)
