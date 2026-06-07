@@ -3,6 +3,7 @@ import threading
 import time
 import queue
 import env
+from datetime import datetime
 
 UDP_PORTS = env.UDP_PORTS
 SELECTED_IPS = env.SELECTED_IPS
@@ -37,7 +38,7 @@ def listen_udp(port):
             data, addr = sock.recvfrom(BUFFER_SIZE)
             sender_ip = addr[0]
             slot_name = IP_TO_SLOT.get(sender_ip, "Unknown Slot")
-            current_time = time.strftime("%H:%M:%S")
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
             msg = f"[{current_time}] [{slot_name}] Port {port} <- Received {len(data)} bytes from {sender_ip}"
             print_queue.put(msg)        
         except Exception as e:
