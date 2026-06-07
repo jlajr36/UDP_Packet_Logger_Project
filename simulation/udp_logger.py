@@ -24,7 +24,8 @@ def listen_udp(port):
     while True:
         try:
             data, addr = sock.recvfrom(BUFFER_SIZE)
-            msg = f"[PORT {port}] From {addr}: {data.decode(errors='replace')}"
+            current_time = time.strftime("%H:%M:%S")
+            msg = f"[{current_time}] Port {port} <- Received {len(data)} bytes from {addr[0]}"
             print_queue.put(msg)        
         except Exception as e:
             print_queue.put(f"[PORT {port}] Error: {e}")
