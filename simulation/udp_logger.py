@@ -42,7 +42,6 @@ def listen_udp(port):
             print_queue.put(msg)        
         except Exception as e:
             print_queue.put(f"[PORT {port}] Error: {e}")
-            break
 
 def main():
     t_print = threading.Thread(target=print_worker, daemon=True)
