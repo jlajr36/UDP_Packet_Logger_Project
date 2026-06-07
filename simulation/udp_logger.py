@@ -10,6 +10,16 @@ BUFFER_SIZE = 4096
 
 print_queue = queue.Queue()
 
+def build_slot_map(ips_list):
+    slot_map = {}
+    for index, ip_pair in enumerate(ips_list):
+        slot_name = f"Slot {index + 1}"
+        for ip in ip_pair:
+            slot_map[ip] = slot_name
+    return slot_map
+
+IP_TO_SLOT = build_slot_map(SELECTED_IPS)
+
 def print_worker():
     while True:
         msg = print_queue.get()
@@ -26,11 +36,7 @@ def listen_udp(port):
         try:
             data, addr = sock.recvfrom(BUFFER_SIZE)
             sender_ip = addr[0]
-            slot_name = "Unknown Slot"
-            for index, ip_pair in enumerate(SELECTED_IPS):
-                if sender_ip in ip_pair:
-                    slot_name = f"Slot {index + 1}"
-                    break
+            slot_name = IP_TO_SLOT.get(sender_ip, "Unknown Slot")
             current_time = time.strftime("%H:%M:%S")
             msg = f"[{current_time}] [{slot_name}] Port {port} <- Received {len(data)} bytes from {sender_ip}"
             print_queue.put(msg)        
