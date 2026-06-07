@@ -58,7 +58,7 @@ class UDPControllerApp:
         log_frame = tk.LabelFrame(self.root, text=" Response Console ", padx=10, pady=5)
         log_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
-        self.console = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, font=("Courier New", 9.5))
+        self.console = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, font=("Courier New", 9))
         self.console.pack(fill="both", expand=True)
         self.console.config(state="disabled") # Read-only console
 
