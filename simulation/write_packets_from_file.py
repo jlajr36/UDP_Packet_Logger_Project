@@ -9,7 +9,7 @@ packets = rdpcap(env.f_pcapng)
 
 iface = env.iface
 
-allowed_ips = {ip for pair in env.selected_ips for ip in pair}
+allowed_ips = {ip for pair in env.SELECTED_IPS for ip in pair}
 
 # ===== BUILD GLOBAL TIMELINE =====
 all_pkts = []

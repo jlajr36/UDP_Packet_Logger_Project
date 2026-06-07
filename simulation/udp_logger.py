@@ -5,6 +5,7 @@ import queue
 import env
 
 UDP_PORTS = env.UDP_PORTS
+SELECTED_IPS = env.SELECTED_IPS
 BUFFER_SIZE = 4096
 
 print_queue = queue.Queue()
@@ -24,8 +25,14 @@ def listen_udp(port):
     while True:
         try:
             data, addr = sock.recvfrom(BUFFER_SIZE)
+            sender_ip = addr[0]
+            slot_name = "Unknown Slot"
+            for index, ip_pair in enumerate(SELECTED_IPS):
+                if sender_ip in ip_pair:
+                    slot_name = f"Slot {index + 1}"
+                    break
             current_time = time.strftime("%H:%M:%S")
-            msg = f"[{current_time}] Port {port} <- Received {len(data)} bytes from {addr[0]}"
+            msg = f"[{current_time}] [{slot_name}] Port {port} <- Received {len(data)} bytes from {sender_ip}"
             print_queue.put(msg)        
         except Exception as e:
             print_queue.put(f"[PORT {port}] Error: {e}")
