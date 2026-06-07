@@ -2,7 +2,7 @@ import socket
 import threading
 import time
 import queue
-import signal  # Used to intercept and suppress Ctrl+C
+import signal  # Intercepts and suppresses Ctrl+C
 from datetime import datetime
 import env
 
@@ -12,8 +12,8 @@ SELECTED_IPS = env.SELECTED_IPS
 COMMAND_PORT = env.COMMAND_PORT
 BUFFER_SIZE = 4096
 
-# Thread-safe Print Queue
-print_queue = queue.Queue()
+# Centralized safe execution queue (Holds logs to print and write)
+logging_queue = queue.Queue()
 
 # Global State Control
 is_logging = False
@@ -36,19 +36,47 @@ IP_TO_SLOT = build_slot_map(SELECTED_IPS)
 
 def ignore_ctrl_c(signum, frame):
     """Callback to log and bypass Ctrl+C keystrokes."""
-    print_queue.put("[!] Warning: KeyboardInterrupt ignored. Use the UDP 'QUIT' command to exit.")
+    logging_queue.put(("CONSOLE", "[!] Warning: KeyboardInterrupt ignored. Use the UDP 'QUIT' command to exit."))
 
 
-def print_worker():
-    """Consumes and prints messages from the print queue."""
+def logging_worker():
+    """
+    Consumes logging entries. Decides whether to print to terminal 
+    or dynamically build and dump contents to specific Slot files.
+    """
+    # Track open file handles per slot. Created lazily when data arrives.
+    slot_files = {}
+
     while True:
         try:
-            msg = print_queue.get(timeout=0.5)
-            print(msg)
-            print_queue.task_done()
+            # Short timeout allows checking the shutdown event periodically
+            item = logging_queue.get(timeout=0.5)
+            target, message = item
+            
+            # Print everything to terminal console
+            print(message)
+            
+            # If target belongs to a specific slot, write cleanly to its file
+            if target.startswith("Slot "):
+                if target not in slot_files:
+                    # File names use platform safe format: Slot_X_YYYY-MM-DD_HH-MM-SS.log
+                    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                    filename = f"{target.replace(' ', '_')}_{timestamp}.log"
+                    slot_files[target] = open(filename, "a", encoding="utf-8", buffering=1) # Line buffered
+                
+                slot_files[target].write(message + "\n")
+
+            logging_queue.task_done()
         except queue.Empty:
             if shutdown_event.is_set():
                 break
+
+    # Clean shutdown: Close all file streams that were dynamically opened
+    for slot_name, file_handle in slot_files.items():
+        try:
+            file_handle.close()
+        except Exception:
+            pass
 
 
 def listen_udp(port):
@@ -56,9 +84,9 @@ def listen_udp(port):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         try:
             sock.bind(("0.0.0.0", port))
-            print_queue.put(f"[+] Data Listener: Listening on UDP port {port}")
+            logging_queue.put(("CONSOLE", f"[+] Data Listener: Listening on UDP port {port}"))
         except Exception as e:
-            print_queue.put(f"[-] Data Listener Failed to bind on port {port}: {e}")
+            logging_queue.put(("CONSOLE", f"[-] Data Listener Failed to bind on port {port}: {e}"))
             return
 
         sock.settimeout(1.0)
@@ -82,12 +110,14 @@ def listen_udp(port):
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                 
                 msg = f"[{current_time}] [{slot_name}] Port {port} <- Received {len(data)} bytes from {sender_ip}"
-                print_queue.put(msg)
+                
+                # Send target string along to assign file routing automatically
+                logging_queue.put((slot_name, msg))
             except Exception as e:
-                print_queue.put(f"[PORT {port}] Error: {e}")
+                logging_queue.put(("CONSOLE", f"[PORT {port}] Error: {e}"))
                 time.sleep(1)
         
-        print_queue.put(f"[-] Data Listener on port {port} shut down.")
+        logging_queue.put(("CONSOLE", f"[-] Data Listener on port {port} shut down."))
 
 
 def listen_commands(port):
@@ -97,9 +127,9 @@ def listen_commands(port):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         try:
             sock.bind(("0.0.0.0", port))
-            print_queue.put(f"[+] Command Listener: Listening on UDP port {port}")
+            logging_queue.put(("CONSOLE", f"[+] Command Listener: Listening on UDP port {port}"))
         except Exception as e:
-            print_queue.put(f"[-] Command Listener Failed to bind on port {port}: {e}")
+            logging_queue.put(("CONSOLE", f"[-] Command Listener Failed to bind on port {port}: {e}"))
             return
 
         sock.settimeout(1.0)
@@ -122,7 +152,7 @@ def listen_commands(port):
                 cmd_upper = command.upper()
                 if cmd_upper != "QUIT":
                     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                    print_queue.put(f"[{current_time}] [COMMAND] From {slot_name} ({sender_ip}): {command}")
+                    logging_queue.put(("CONSOLE", f"[{current_time}] [COMMAND] From {slot_name} ({sender_ip}): {command}"))
                 
                 response = ""
 
@@ -130,13 +160,13 @@ def listen_commands(port):
                     with is_logging_lock:
                         is_logging = True
                     response = "ACK: Logging started"
-                    print_queue.put("[*] System State: Logging ENABLED")
+                    logging_queue.put(("CONSOLE", "[*] System State: Logging ENABLED"))
 
                 elif cmd_upper == "STOP":
                     with is_logging_lock:
                         is_logging = False
                     response = "ACK: Logging stopped"
-                    print_queue.put("[*] System State: Logging DISABLED")
+                    logging_queue.put(("CONSOLE", "[*] System State: Logging DISABLED"))
 
                 elif cmd_upper == "ALIVE":
                     with is_logging_lock:
@@ -153,22 +183,22 @@ def listen_commands(port):
                 try:
                     sock.sendto(response.encode('utf-8'), addr)
                 except Exception as send_err:
-                    print_queue.put(f"[-] Failed to send echo response to {addr}: {send_err}")
+                    logging_queue.put(("CONSOLE", f"[-] Failed to send echo response to {addr}: {send_err}"))
 
             except Exception as e:
-                print_queue.put(f"[COMMAND PORT {port}] Error: {e}")
+                logging_queue.put(("CONSOLE", f"[COMMAND PORT {port}] Error: {e}"))
                 time.sleep(1)
         
-        print_queue.put("[-] Command Listener shut down.")
+        logging_queue.put(("CONSOLE", "[-] Command Listener shut down."))
 
 
 def main():
     # Override standard Ctrl+C handling globally
     signal.signal(signal.SIGINT, ignore_ctrl_c)
 
-    # Start up the printing sub-thread
-    t_print = threading.Thread(target=print_worker, daemon=True)
-    t_print.start()
+    # Start up the logging/printing sub-thread
+    t_log = threading.Thread(target=logging_worker, daemon=True)
+    t_log.start()
 
     threads = []
 
@@ -183,7 +213,7 @@ def main():
     t_cmd.start()
     threads.append(t_cmd)
 
-    print_queue.put("[*] UDP listeners running. System is LOCKED. Send UDP 'QUIT' command to exit.")
+    logging_queue.put(("CONSOLE", "[*] UDP listeners running. System is LOCKED. Send UDP 'QUIT' command to exit."))
 
     # Primary execution loop - can now only be broken by shutdown_event
     while not shutdown_event.is_set():
@@ -193,8 +223,8 @@ def main():
     for t in threads:
         t.join(timeout=2.0)
 
-    # Process outstanding items remaining in print queue
-    print_queue.join()
+    # Process outstanding items remaining in logging queue
+    logging_queue.join()
     print("[*] System completely shutdown.")
 
 
