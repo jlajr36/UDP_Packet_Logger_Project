@@ -33,29 +33,32 @@ def build_slot_map(ips_list):
 IP_TO_SLOT = build_slot_map(SELECTED_IPS)
 
 
-def ignore_ctrl_c(signum, frame):
-    logging_queue.put(("CONSOLE", "[!] Warning: KeyboardInterrupt ignored. Use the UDP 'QUIT' command to exit."))
+def handle_shutdown_signal(signum, frame):
+    logging_queue.put(("CONSOLE", "[!] Interruption signal received. Initiating graceful shutdown..."))
+    shutdown_event.set()
 
 
 def logging_worker():
-    """Consumes logging entries. Manages file handles safely."""
+    """Consumes logging entries. Writes safely and flushes directly to disk."""
     slot_files = {}
 
-    # Run until shutdown is set AND queue is completely empty
     while not shutdown_event.is_set() or not logging_queue.empty():
         try:
             item = logging_queue.get(timeout=0.5)
             target, message = item
             
+            # Print everything to the console monitor screen
             print(message)
             
+            # Save strictly Slot messages down to files
             if target.startswith("Slot "):
                 if target not in slot_files:
                     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                     filename = f"{target.replace(' ', '_')}_{timestamp}.log"
-                    slot_files[target] = open(filename, "a", encoding="utf-8", buffering=1)
+                    slot_files[target] = open(filename, "a", encoding="utf-8", errors="backslashreplace")
                 
                 slot_files[target].write(message + "\n")
+                slot_files[target].flush()  # Force OS to write to disk instantly
 
             logging_queue.task_done()
         except queue.Empty:
@@ -70,7 +73,7 @@ def logging_worker():
 
 
 def listen_udp(port):
-    """Listens for data payloads on a specific UDP port."""
+    """Listens for data payloads on a specific UDP port. Drops unknown IPs."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         try:
             sock.bind(("0.0.0.0", port))
@@ -88,18 +91,31 @@ def listen_udp(port):
                 except socket.timeout:
                     continue
 
+                # Read the logging gate state safely
                 with is_logging_lock:
                     logging_active = is_logging
 
+                # If logging is disabled (default), drop the message instantly
                 if not logging_active:
                     continue
 
                 sender_ip = addr[0]
-                slot_name = IP_TO_SLOT.get(sender_ip, "Unknown Slot")
                 
-                # Generated here, but moving this to the logger worker can yield optimization if needed
+                # Look up if the IP is in your env.py configuration mapping
+                slot_name = IP_TO_SLOT.get(sender_ip, None)
+                
+                # If the IP isn't recognized, silently ignore it
+                if slot_name is None:
+                    continue
+
+                # Process the known slot payload
+                try:
+                    payload_content = data.decode('utf-8').strip()
+                except UnicodeDecodeError:
+                    payload_content = f"<HEX_DATA: {data.hex()}>"
+                
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                msg = f"[{current_time}] [{slot_name}] Port {port} <- Received {len(data)} bytes from {sender_ip}"
+                msg = f"[{current_time}] [{slot_name}] Port {port} <- From {sender_ip} ({len(data)} bytes) | PAYLOAD: {payload_content}"
                 
                 logging_queue.put((slot_name, msg))
             except Exception as e:
@@ -110,7 +126,7 @@ def listen_udp(port):
 
 
 def listen_commands(port):
-    """Listens for inbound operational commands."""
+    """Listens for inbound operational commands to open/close the logging gate."""
     global is_logging
     
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -131,7 +147,7 @@ def listen_commands(port):
                     continue
 
                 sender_ip = addr[0]
-                slot_name = IP_TO_SLOT.get(sender_ip, "Unknown Slot")
+                slot_name = IP_TO_SLOT.get(sender_ip, "Unknown IP")
                 
                 try:
                     command = data.decode('utf-8').strip()
@@ -182,9 +198,8 @@ def listen_commands(port):
 
 
 def main():
-    signal.signal(signal.SIGINT, ignore_ctrl_c)
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
 
-    # Changed daemon to False to guarantee file stream flushes on close
     t_log = threading.Thread(target=logging_worker, daemon=False)
     t_log.start()
 
@@ -199,16 +214,17 @@ def main():
     t_cmd.start()
     threads.append(t_cmd)
 
-    logging_queue.put(("CONSOLE", "[*] UDP listeners running. System is LOCKED. Send UDP 'QUIT' command to exit."))
+    logging_queue.put(("CONSOLE", "[*] UDP listeners running. Logging is LOCKED by default. Send 'START' to activate."))
 
     while not shutdown_event.is_set():
-        time.sleep(0.5)
+        try:
+            time.sleep(0.2)
+        except KeyboardInterrupt:
+            shutdown_event.set()
 
-    # Wait for network I/O to stop spinning
     for t in threads:
-        t.join(timeout=2.0)
+        t.join(timeout=1.0)
 
-    # Blocks cleanly until the logging worker drains remaining log payloads safely
     t_log.join()
     print("[*] System completely shutdown.")
 
