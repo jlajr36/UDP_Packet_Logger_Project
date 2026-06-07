@@ -13,6 +13,11 @@ BUFFER_SIZE = 4096
 
 print_queue = queue.Queue()
 
+# Global state control - Initialized to False so logging is OFF at startup
+is_logging = False
+is_logging_lock = threading.Lock()
+shutdown_event = threading.Event()
+
 def build_slot_map(ips_list):
     slot_map = {}
     for index, ip_pair in enumerate(ips_list):
@@ -31,13 +36,25 @@ def print_worker():
 
 def listen_udp(port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", port))
+    try:
+        sock.bind(("0.0.0.0", port))
+        print_queue.put(f"[+] Data Listener: Listening on UDP port {port}")
+    except Exception as e:
+        print_queue.put(f"[-] Data Listener Failed to bind on port {port}: {e}")
+        return
 
-    print_queue.put(f"[+] Data Listener: Listening on UDP port {port}")
-
-    while True:
+    while not shutdown_event.is_set():
         try:
-            data, addr = sock.recvfrom(BUFFER_SIZE)
+            sock.settimeout(1.0)
+            try:
+                data, addr = sock.recvfrom(BUFFER_SIZE)
+            except socket.timeout:
+                continue
+
+            with is_logging_lock:
+                if not is_logging:
+                    continue
+
             sender_ip = addr[0]
             slot_name = IP_TO_SLOT.get(sender_ip, "Unknown Slot")
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -45,36 +62,73 @@ def listen_udp(port):
             print_queue.put(msg)        
         except Exception as e:
             print_queue.put(f"[PORT {port}] Error: {e}")
+            time.sleep(1)
 
 def listen_commands(port):
+    global is_logging
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", port))
+    try:
+        sock.bind(("0.0.0.0", port))
+        print_queue.put(f"[+] Command Listener: Listening on UDP port {port}")
+    except Exception as e:
+        print_queue.put(f"[-] Command Listener Failed to bind on port {port}: {e}")
+        return
 
-    print_queue.put(f"[+] Command Listener: Listening on UDP port {port}")
-
-    while True:
+    while not shutdown_event.is_set():
         try:
-            data, addr = sock.recvfrom(BUFFER_SIZE)
+            sock.settimeout(1.0)
+            try:
+                data, addr = sock.recvfrom(BUFFER_SIZE)
+            except socket.timeout:
+                continue
+
             sender_ip = addr[0]
             slot_name = IP_TO_SLOT.get(sender_ip, "Unknown Slot")
             
-            # Decode the command payload
             try:
                 command = data.decode('utf-8').strip()
             except UnicodeDecodeError:
                 command = f"<Non-text data: {data.hex()}>"
 
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            print_queue.put(f"[{current_time}] [COMMAND] From {slot_name} ({sender_ip}): {command}")
+            cmd_upper = command.upper()
+            if cmd_upper != "QUIT":
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                print_queue.put(f"[{current_time}] [COMMAND] From {slot_name} ({sender_ip}): {command}")
             
-            # --- Handle your commands here ---
-            # Example:
-            # if command == "REBOOT":
-            #     trigger_reboot_logic(sender_ip)
-            # ---------------------------------
+            response = ""
+
+            if cmd_upper == "START":
+                with is_logging_lock:
+                    is_logging = True
+                response = "ACK: Logging started"
+                print_queue.put("[*] System State: Logging ENABLED")
+
+            elif cmd_upper == "STOP":
+                with is_logging_lock:
+                    is_logging = False
+                response = "ACK: Logging stopped"
+                print_queue.put("[*] System State: Logging DISABLED")
+
+            elif cmd_upper == "ALIVE":
+                with is_logging_lock:
+                    status = "running (logging active)" if is_logging else "running (logging stopped)"
+                response = f"ACK: Application is {status}"
+
+            elif cmd_upper == "QUIT":
+                response = "ACK: Application quitting"
+                shutdown_event.set()
+
+            else:
+                response = f"ERR: Unknown command '{command}'"
+
+            try:
+                sock.sendto(response.encode('utf-8'), addr)
+            except Exception as send_err:
+                print_queue.put(f"[-] Failed to send echo response to {addr}: {send_err}")
 
         except Exception as e:
             print_queue.put(f"[COMMAND PORT {port}] Error: {e}")
+            time.sleep(1)
 
 def main():
     t_print = threading.Thread(target=print_worker, daemon=True)
@@ -91,13 +145,15 @@ def main():
     t_cmd.start()
     threads.append(t_cmd)
 
-    print_queue.put("[*] UDP listeners running. Press Ctrl+C to exit.")
+    print_queue.put("[*] UDP listeners running. Use UDP command 'quit' to exit.")
 
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n[*] Shutting down...")
+    while not shutdown_event.is_set():
+        try:
+            time.sleep(0.5)
+        except KeyboardInterrupt:
+            pass
+
+    print_queue.join() 
 
 if __name__ == "__main__":
     main()
