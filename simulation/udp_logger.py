@@ -1,5 +1,6 @@
 import socket
 import threading
+import time
 import env
 
 UDP_PORTS = env.UDP_PORTS
@@ -31,7 +32,7 @@ def main():
 
     try:
         while True:
-            pass  # keep main thread alive
+            time.sleep(1)
     except KeyboardInterrupt:
         print("\n[*] Shutting down...")
 
