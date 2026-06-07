@@ -47,9 +47,8 @@ def logging_worker():
             item = logging_queue.get(timeout=0.5)
             target, message = item
             
-            # Print everything to the console EXCEPT slot payloads
-            if not target.startswith("Slot "):
-                print(message)
+            # Print everything to the console monitor screen
+            print(message)
             
             # Save strictly Slot messages down to files
             if target.startswith("Slot "):
