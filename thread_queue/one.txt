@@ -1,0 +1,123 @@
+import tkinter as tk
+from tkinter.scrolledtext import ScrolledText
+import threading
+import queue
+import time
+import math
+
+
+class MathApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Producer / Consumer Queue Example")
+
+        self.running = False
+        self.worker_thread = None
+
+        # Shared queue
+        self.result_queue = queue.Queue(maxsize=100)
+
+        # Buttons
+        button_frame = tk.Frame(root)
+        button_frame.pack(pady=10)
+
+        self.start_button = tk.Button(
+            button_frame,
+            text="Start",
+            width=10,
+            command=self.start_worker
+        )
+        self.start_button.pack(side=tk.LEFT, padx=5)
+
+        self.stop_button = tk.Button(
+            button_frame,
+            text="Stop",
+            width=10,
+            command=self.stop_worker
+        )
+        self.stop_button.pack(side=tk.LEFT, padx=5)
+
+        # Text display
+        self.text_box = ScrolledText(root, width=80, height=20)
+        self.text_box.pack(padx=10, pady=10)
+
+        # Start queue polling
+        self.root.after(100, self.process_queue)
+
+        # Handle window close
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def complex_math(self, n):
+        """
+        Simulate expensive computation.
+        """
+        result = 0
+
+        for i in range(1, 50000):
+            result += math.sin(i * n) * math.cos(i / (n + 1))
+
+        return result
+
+    def producer(self):
+        count = 1
+
+        while self.running:
+            result = self.complex_math(count)
+
+            try:
+                self.result_queue.put(
+                    f"Job {count}: Result = {result:.6f}",
+                    timeout=1
+                )
+            except queue.Full:
+                pass
+
+            count += 1
+
+    def start_worker(self):
+        if self.running:
+            return
+
+        self.running = True
+
+        self.worker_thread = threading.Thread(
+            target=self.producer,
+            daemon=True
+        )
+        self.worker_thread.start()
+
+        self.text_box.insert(tk.END, "Worker started\n")
+        self.text_box.see(tk.END)
+
+    def stop_worker(self):
+        self.running = False
+
+        self.text_box.insert(tk.END, "Worker stopped\n")
+        self.text_box.see(tk.END)
+
+    def process_queue(self):
+        """
+        Runs on GUI thread.
+        Pulls results from queue and updates UI.
+        """
+        try:
+            while True:
+                message = self.result_queue.get_nowait()
+
+                self.text_box.insert(tk.END, message + "\n")
+                self.text_box.see(tk.END)
+
+        except queue.Empty:
+            pass
+
+        self.root.after(100, self.process_queue)
+
+    def on_close(self):
+        self.running = False
+        self.root.destroy()
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = MathApp(root)
+    root.mainloop()
